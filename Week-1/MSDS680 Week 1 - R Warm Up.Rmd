@@ -1,0 +1,93 @@
+---
+title: "MSDS680 Week 1 - R Warm Up"
+author: "Benjamin Siebold"
+date: "`r format(Sys.time(), '%b, %d, %Y')`"
+output: pdf_document
+---
+## Introduction 
+  In this project, a few R functions will be applied to R datasets with the intention of getting "warmed" up in R prior to building ML models in the following weeks, basic R functions for data exploration will be inspected, and the dataExplorer package will be tested to see what it has to offer. Throughout this R file, basic data investigation and cleaning will be completed that is also necessary when cleaning data for ML models Before applying any functions or solving any data issues, the number of rows of data and a brief summary of the data is provided.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r Introduction}
+nrow(airquality)
+summary(airquality)
+```
+
+From above, it can be seen that both Ozone, and Solar.R have missing values, and will need to be cleaned.
+
+## Find and Remove NULLS
+  One of the first steps in data cleaning is finding missing values, and if the missing data appears to be problematic, remove those rows from the dataset. The R base dataset "airquality" has missing values and thus is a good candidate for this first exercise.
+  
+```{r Find and Remove NULLs}
+nrow(airquality[!complete.cases(airquality), ])
+airquality_no_NA = na.omit(airquality)
+nrow(airquality_no_NA)
+summary(airquality_no_NA)
+```
+
+  Above multiple functions can be seen that accomplish the goal of finding NULLS and removing them. The nrow function allows for a total count of dataset rows to be taken. By performing the function on all three datasets it can be seen all the rows with NULLS were removed (153-42 = 111). The second function (summary) provides some basic descriptive statistics of the cleaned dataset. The most important function used above is the complete.cases() function, which provides a a boolean matrix of TRUES and FALSES if a row has a NULL value or not. By combining this with an outer dataframe and NOT call, all rows with a NULL value can be returned or counted.
+
+## Imput missing values with means or medians
+  Aside from removing all NULL rows in a dataset, another option is to replace missing cells or NULL values with median or mean values of that column. This type of cleaning is necessary because dropping rows may be more problematic if there are many factors, removing rows that have values for those factors will remove necessary data.
+  
+```{r Impute missing Values}
+air_means = airquality
+air_means$Ozone[is.na(air_means$Ozone)] = round(mean(air_means$Ozone, na.rm=TRUE), 1)
+air_means$Solar.R[is.na(air_means$Solar.R)] = round(mean(air_means$Solar.R, na.rm=TRUE), 1)
+summary(air_means)
+```
+
+From the initial dataset summary, compared to the imputed means dataset, it can be seen the median of Ozone column has increased and the median of the Solar.R column has decreased. This is because the mean values that were imputed were higher and lower respectively. This will need to be considered if using models like kmeans/kmedians because it will impact how the clusters are made. The functions used in the above steps are round and mean, which allow a full column to be rounded to a certain placement, and mean which fins the mean of a column in the dataset.
+
+## Scale or normalize the data
+Another useful preparation to make to data is to perform data scaling. This is useful because if multiple columns or variables are being used with different scales, they can be normalized to give equal weights.
+
+```{r Scale data}
+summary(mtcars)
+scaled_cars = mtcars
+scaled_cars$mpg = scale(scaled_cars$mpg)
+scaled_cars$disp = scale(scaled_cars$disp)
+scaled_cars$hp = scale(scaled_cars$hp)
+summary(scaled_cars)
+```
+
+Above, the scale functino is used in R to scale the mpg, disp, and hp columns of the mtcars dataset. The scale function finds the difference between each cell and the columns mean, and the divides it by the columns standard deviation to normalize the data with a new mean of 0.
+
+## Create dummy variables
+The last beneficial data cleaning technique in this notebook is to change categorical data into dummy variables. This will affect the dataframe based off how many values are in the columns converting to dummy variables
+
+```{r Change Categorical to Dummy}
+library(caret)
+head(iris)
+dummy_vars = dummyVars("~.", data=iris, fullRank=T)
+dummy_iris = data.frame(predict(dummy_vars, iris))
+head(dummy_iris)
+```
+
+From above the dummyVars() function from the caret library can be seen. This function maps categorical columns into boolean numbers (0,1) to allow for certain ML models to be used. If a categorial column with more than two values exists, a column for each category is mapped, then, a dataframe can be created based off these dummy variables as shown above.
+
+## Data Exploration in R
+Now that data cleaning has been completed in R, some basic data exploration functions will be looked at to show how data can be understood efficiently in R. Aside from the head, tail, and summary, additional functions such as length, or count from the dplyr library can be used to get a count occurance of each value in a column. Below these functions can be seen.
+
+```{r Data Exploration}
+library(dplyr)
+length(iris)
+iris %>% count(Species)
+```
+
+## Inspect DataExploer
+The last part of the R warm up is to make use of the DataExplorer package in R. After working through some guides for DataExplorer, the quick visualization options for getting an idea of what data is useful seems really convinient. For example, both the plot_intro and plot_missing functions allow for quick inspection of potential columns for removal, removal of rows, or imputing data. In addition to this, the ease of plotting correlation matrices, and qq plots are features that are vary helpful. Thusfar I have spent a lot more time in python, and have used packages such as seaborn coupled with pandas to accomplish similar plots. In R, my experience is with ggplot2, which seems less simple and effecient to get off the ground moving.
+
+## Conclusion
+In this exercise, some questions were answered regarding ways to clean data in R, what functions can be used to explore data, and how the DataExplorer package works. Overall, using these methods will be important when dealing with raw data that may not be formatted for ML.
+
+
+## References
+
+http://uc-r.github.io/missing_values#missing
+
+http://topepo.github.io/caret/pre-processing.html
+
+https://cran.r-project.org/web/packages/DataExplorer/vignettes/dataexplorer-intro.html#alternative
