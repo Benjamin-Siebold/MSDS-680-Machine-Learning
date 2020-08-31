@@ -73,12 +73,19 @@ Now that data cleaning has been completed in R, some basic data exploration func
 
 ```{r Data Exploration}
 library(dplyr)
+library(DataExplorer)
 length(iris)
 iris %>% count(Species)
+plot_intro(airquality)
+plot_missing(airquality)
+plot_correlation(na.omit(airquality))
 ```
 
 ## Inspect DataExploer
-The last part of the R warm up is to make use of the DataExplorer package in R. After working through some guides for DataExplorer, the quick visualization options for getting an idea of what data is useful seems really convinient. For example, both the plot_intro and plot_missing functions allow for quick inspection of potential columns for removal, removal of rows, or imputing data. In addition to this, the ease of plotting correlation matrices, and qq plots are features that are vary helpful. Thusfar I have spent a lot more time in python, and have used packages such as seaborn coupled with pandas to accomplish similar plots. In R, my experience is with ggplot2, which seems less simple and effecient to get off the ground moving.
+The last part of the R warm up is to make use of the DataExplorer package in R. After working through some guides for DataExplorer, the quick visualization options for getting an idea of what data is useful seems really convenient. For example, both the plot_intro and plot_missing functions allow for quick inspection of potential columns for removal, removal of rows, or imputing data. In addition to this, the ease of plotting correlation matrices, and qq plots are features that are very helpful. For example, from the missing visual it can be seen much of the data is missing on the Ozone column, and from the correlation matrix it can be seen Ozone and Temp are relatively highly positively correlated, and Ozone and wind negatively.
+
+## Current comfortability
+Thusfar I have spent a lot more time in python, and have used packages such as seaborn coupled with pandas to accomplish similar plots. In R, my experience is with ggplot2, which seems less simple and efficient to get off the ground moving.
 
 ## Conclusion
 In this exercise, some questions were answered regarding ways to clean data in R, what functions can be used to explore data, and how the DataExplorer package works. Overall, using these methods will be important when dealing with raw data that may not be formatted for ML.
