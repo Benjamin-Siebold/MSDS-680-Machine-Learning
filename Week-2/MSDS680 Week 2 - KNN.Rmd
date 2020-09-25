@@ -1,0 +1,151 @@
+---
+title: "MSDS680 - Week 2 - KNN"
+author: "Benjamin Siebold"
+date: "`r format(Sys.time(), '%b, %d, %Y')`"
+output: pdf_document
+---
+
+## Introduction
+In this project, the KNN algorithm will be used to build an algorithm to predict whether heart disease is present in patients based of a few classifiers or features about each patient. The KNN algorithm is a strong, effecient algorithm to class data points based off features in the dataset. It uses a training dataset to learn how to classify the data, then applies those classes to a test dataset to ensure the accuracy of "unkown" datapoints. This training/test data allows for creation of the algorithm to then be applied to data without the classes to actually predict the class of data. The data for this was taken from UC Irvine using a semi cleaned dataset to reduce the features down to 14. Some of these include age, sex, and cholesterol levels.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### 1: Load libraries and data
+The first step in analysis is to load the data and make sure it is easily readable. To do this, the data is first loaded, and then the columns are changed from numeric values to the correlating column names from the UCI website. Ones the names are changed, a summary can be provided to get an initial understanding of the data.
+
+```{r library and set up, include=TRUE}
+library(class)
+library(gmodels)
+library(caret)
+library(DataExplorer)
+library(data.table)
+library(e1071)
+
+heart_data <- fread('https://archive.ics.uci.edu/ml/machine-learning-databases/heart-disease/processed.cleveland.data')
+
+col_names <- c('age','sex','cp','trestbps', 'chol', 
+          'fbs', 'restecg', 'thalach', 'exang',
+          'oldpeak', 'slope', 'ca', 'thal', 'num'
+          )
+names(heart_data) <- col_names
+set.seed(476)
+
+summary(heart_data)
+```
+
+From the above, two columns look to be problematic. Both ca and thal are listed as characters, which does not seem to to line up with their column descriptions.
+
+### 2: Explore and Clean Data
+Now that the data has been loaded, the first step is to convert the columns listed above to numeric columns, then
+use the DataExplorer package to build some basic visuals about the data, provide a summary with the corrected columns, and then based off the plots and summary, determine what data cleaning may be necessary.
+
+```{r Data Conversion, include=TRUE, warning=FALSE}
+heart_data$ca <- as.numeric(heart_data$ca)
+heart_data$thal <- as.numeric(heart_data$thal)
+```
+```{r Data Exploration, include=TRUE, echo=FALSE}
+plot_intro(heart_data)
+plot_correlation(heart_data)
+summary(heart_data)
+plot_missing(heart_data)
+
+heart_no_na <- na.omit(heart_data)
+
+head(heart_no_na,10)
+```
+
+Above it can be seen there were two missing values in thal, and 4 in ca. Based of the missing plot the amount of data does not seem significant enough to impute data, so dropping rows with NAs is a reasonable method, and thus is done.
+
+### 3: Create Factor and Dummy columns, and combine Data
+In addition to removing data, it can be seen in the table there are a few columns that need to be scaled to prevent features from being dominate. Additionally, there are a few columns based of descriptions that are identifiers, and thus need to be split into multiple dummy columns. The following scales the columns necessary, and creates factors of the others, allowing them to be converted into dummy variables. Lastly, the scaled, dummy, and remaining variables are all merged back into a cleaned dataset which will be used to apply a knn algorithm.
+
+```{r convert data, include =TRUE}
+scaled_heart_cols <- as.data.frame(lapply(heart_no_na[,c(1,4,5,8,10)], scale))
+factor_heart_cols <- as.data.frame(lapply(heart_no_na[,c(3,7,11:13)],as.factor))
+dummy_heart <- dummyVars(~., data=factor_heart_cols,fullRank=TRUE)
+dummy_heart_cols <- as.data.frame(predict(dummy_heart, newdata=factor_heart_cols))
+
+heart_no_na$num <- ifelse(heart_no_na$num >= 1,1,0)
+heart_no_na$pred <- as.factor(heart_no_na$num)
+rest_heart_columns <- heart_no_na[,c(2,6,9,15)]
+
+clean_heart <- cbind(scaled_heart_cols, dummy_heart_cols, rest_heart_columns)
+```
+
+### 4: Build Function to apply to multiple datasets
+The following function allows for knn models with different amount of features to be compared to each other quickly. This function will create the test and training datasets, along with run a loop of the knn algorithm over the number of features in the dataset and return a plot of the f1 scores to allow for selection of the most accurate number of neighbors.
+
+```{r knn model, include=TRUE}
+knn_range <- function(data) {
+  set.seed(476)
+  neighbor_range <- c(1:(ncol(data) - 1))
+  f1_scores <- list()
+  max_f1 = 0
+  k_opt = 0
+  idx <- createDataPartition(data$pred, p=0.7, list=FALSE)
+  heart.train <- (data[idx,])
+  heart.test <- (data[-idx,])
+  train.labels <- heart.train$pred
+  test.labels <- heart.test$pred
+  for (i in neighbor_range){
+    prediction <- knn(heart.train, heart.test, heart.train$pred, k=i)
+    c <- confusionMatrix(prediction, test.labels)
+    f1 <- as.numeric(c$byClass['F1'])
+    f1_scores[[i]] <- f1
+    if (f1>max_f1){
+      max_f1 <- f1
+      k_opt <- i
+    }       
+  }
+return(plot(neighbor_range, f1_scores))
+}
+```
+
+### 5: Apply Function to clean_heart
+With the function written, it will be applied to the clean heart dataset to determine how many neighbors will be the best prediction.
+
+```{r clean_heart, include=TRUE, echo=FALSE}
+knn_range(clean_heart)
+```
+With the function applied, it can be seen the most accurate option is to apply five neighbors to the data, and the results can be inspected below
+```{r confusion of best, include=TRUE}
+set.seed(476)
+cidx <- createDataPartition(clean_heart$pred, p=0.7, list=FALSE)
+cheart.train <- (clean_heart[cidx,])
+cheart.test <- (clean_heart[-cidx,])
+ctrain.labels <- cheart.train$pred
+ctest.labels <- cheart.test$pred
+cprediction <- knn(cheart.train, cheart.test, ctrain.labels, k=5) ###replace this value
+c <- confusionMatrix(cprediction, ctest.labels)
+c
+as.numeric(c$byClass['F1'])
+```
+
+Above it can be seen the overall accuracy of the is 92.13%, and the f1 score which is most commonly used to determine performance is 92.92%.
+
+### 6: Feature Reduction and compare
+With the function written, the correlation matrix can be looked at from the beginning to see there were a few metrics that did not have heavy impact on the prediction column in the dataset.
+Both the fbs and chol columns have almost no correlation to the prediction column, thus for sake of investigation will be dropped and the knn_range function will be run again.
+
+```{r feature_reduction, include=TRUE}
+reduced_heart <- subset(clean_heart, select= -c(fbs,chol))
+knn_range(reduced_heart)
+```
+```{r reduced heart, include=TRUE}
+set.seed(476)
+ridx <- createDataPartition(reduced_heart$pred, p=0.7, list=FALSE)
+rheart.train <- (reduced_heart[ridx,])
+rheart.test <- (reduced_heart[-ridx,])
+rtrain.labels <- rheart.train$pred
+rtest.labels <- rheart.test$pred
+rprediction <- knn(rheart.train, rheart.test, rtrain.labels, k=11)
+c <-confusionMatrix(rprediction, rtest.labels)
+c
+as.numeric(c$byClass['F1'])
+```
+From above, the model with 11 neighbors is the most accurate, and when applied, the overall accuracy is the same at 92.13% and the f1 score is only slightly lower at 92.78%. The difference in accuracy of .14% is not significant, and although these models run extremely fast due to the size of data, on a larger dataset this difference would not be significant enough to justify keeping the features. Thus for this data the best option would be reducing the features of the dataset and applying 11 neighbors to the knn algorithm as shown above.
+
+### Conclusion
+From the project above, the utility of the knn algorithm can be seen to be effective at predicting the class of datapoints based off features. This example is simple in the fact there are only two classes for the datapoints to be assigned too. Additionally, the function written to output the neighbor range was not an efficient method, as the variables were not stored, and to work the model again with a static knn value required the training and testing split, along with labels to be entered, creating repeated work and code.

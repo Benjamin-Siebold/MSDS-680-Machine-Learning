@@ -1,0 +1,155 @@
+---
+title             : "MSDS680 - Week 4 - Decision Trees"
+shorttitle        : "Decision Trees and "
+
+author: 
+  - name          : "Benjamin Siebold"
+    affiliation   : ""
+    corresponding : yes    # Define only one corresponding author
+
+affiliation:
+  - id            : ""
+    institution   : "Regis University"
+
+keywords          : "keywords"
+wordcount         : "X"
+
+bibliography      : ["r-references.bib"]
+
+floatsintext      : no
+figurelist        : no
+tablelist         : no
+footnotelist      : no
+linenumbers       : no
+mask              : no
+draft             : no
+
+documentclass     : "apa6"
+classoption       : "man"
+output            : papaja::apa6_pdf
+---
+
+```{r setup, include = TRUE}
+library("papaja")
+r_refs("r-references.bib")
+```
+
+# Introduction
+  In this project the wine dataset from UCI ML repository will be taken and using decision trees and random forests, the quality of the wine will be predicted based off different features. The wine dataset is made up of 1599 rows and 11 features, with six different rankings assigned to different wines. The source data for this analysis can be referenced here: 
+https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv   
+
+# Methodology
+## Set Up
+  The first step in the process is to set up the environment for analysis and load in the data. This will entail loading in the necessary packages for analysis, setting the seedalong with loading in the dataset from the source.
+```{r environment setup, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+library(DataExplorer) #Used for initial investigation
+library(caret) #Used for performance of models
+library(randomForest) #Used to apply randomForest model
+library(rpart) #Used for Decision Tree models
+library(rpart.plot) #Used for plotting trees
+library(plyr) #Used for data splits and counts
+
+set.seed(486)
+
+wine_data <- read.csv('https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv', sep=';', header = T)
+```
+
+## Data Investigation
+  With the data now loaded, an initial investigation is necessary. A correlation plot, as well as an investigation to make sure there is no missing data. The columns will also be renamed to make them shorter and moer easily read in a plot.
+```{r Data Investigation, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+
+head(wine_data, 10)
+col_names <- c('fx.acid', 'vol.acid', 'ctrc.acid', 'res.sug', 
+                'chlor', 'free.so2', 'tot.so2', 'dens', 
+                'pH', 'sulph', 'alc', 'qual')
+names(wine_data) <- col_names
+
+summary(wine_data)
+plot_missing(wine_data)
+plot_correlation(wine_data)
+count(wine_data, vars = 'qual')
+```
+  Above it can be seen there is no missing data. The correlation matrix shows the quality of wine is most heavily impacted by it's alcohol level, and it's volatile.acidity. More interestingly is the count of wine rankings. Although there are 6 different rankings of quality, only .6% of the wine were of quality 3, and only 1.1% of the wines were of quality 9. The majority of the wines (82%) were ranked 5 or 6. This brings up the question of whether or not the rankings should stay as is, or be reajusted to a new quality system. The below were run three times, normal, with ranks 3,4 and 7,8 combined, and finally with two rankings ("High"/"Low"). 
+  
+  Of the three the 2 grouped model performed the most accurate, but it didn't seem to accomplish the goal. Wine of quality 8 would have to be much better than that of 6, and there was plenty of wine ranked 7. For this reason, the decision was made to use the quality grouped into 4 rankings instead of 6.
+
+## Data Cleaning and Preparation
+  With the decision made to use four rankings, the wine quality needs to be combined into smaller rankings and other steps to prepare for model application will be completed. This includes assigning the quality column to a factor, and splitting the data into training and test data.
+
+```{r Data Clean, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+wine_data$qual[wine_data$qual == 3] <- 4
+wine_data $qual[wine_data$qual == 8] <- 7
+count(wine_data, vars = 'qual')
+
+wine_data$qual <- as.factor(wine_data$qual)
+idx = createDataPartition(wine_data$qual, p=.7, list=F)
+
+wine_train = wine_data[idx,]
+wine_test = wine_data[-idx,]
+prop.table(table(wine_train$qual))
+prop.table(table(wine_test$qual))
+```
+
+## Model Application
+  With the data cleaned and split, the next step in the analysis is to build and visualize the tree, apply the model to test data, and analyze the results.
+
+```{r Model application, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+wine_tree <- rpart(qual ~ ., data=wine_train, cp = 0)
+printcp(wine_tree) 
+plotcp(wine_tree)
+rpart.plot(wine_tree, branch = .3)
+```
+
+  The tree was built with every features available when setting the cp=0, which creates one, a hard to interpret decision tree, and two may have a problem of overfitting. 
+
+```{r model application cont., echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+wine_pred <- predict(wine_tree, wine_test, type='class')
+confusionMatrix(wine_pred, wine_test$qual)
+```
+
+  With an accuracy score of .5565 the tree does not seem to be an accurate source of determining wine quality. To hopefully alleviate this, the tree will next be pruned and the above steps reproduced to see if results get better. In order to prune the tree, the minimum xerror value will be taken from the splits above, and by finding the CP value correlated with the minimum xerror value, the splits occuring after the CP will be removed, pruning the tree.
+  
+```{r pruned model, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+min(wine_tree$cptable[,'xerror'])
+which.min(wine_tree$cptable[,'xerror'])
+wine_cp <- wine_tree$cptable[which.min(wine_tree$cptable[,'xerror']),'CP']
+
+pruned_wine <- prune(wine_tree, cp = wine_cp)
+printcp(pruned_wine) 
+rpart.plot(pruned_wine, branch = .3)
+
+pruned_pred <- predict(pruned_wine, wine_test, type='class')
+confusionMatrix(pruned_pred, wine_test$qual)
+```
+
+  The pruned tree accomplished a few things. Looking at the tree it is readable and it can be seen the features were cut off at four features being used, instead of 14. This, coupled with the accuracy score of the pruned tree being .5858 shows pruning the tree was successful. It not only improved the real accuracy of the model, but also by removing unnecessary features will improve the ability to reproduce along with the simplicity of predicting the quality of wine.
+  
+## Random Forest Application
+  Although the pruned tree slightly increased the models accuracy, it still is not nearly close to reliable enough to use. Fortunately Random Forests usually have better performance than single trees. The last model that will be applied to the wine dataset is a random forest model. Along with the model predicting test data, a plot of variable importance will be produced to assist with interpreting the forest.
+  
+```{r rf application, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+wine_forest <- randomForest(qual ~ ., wine_train, ntree=100, importance=T)
+varImpPlot(wine_forest)
+
+forest_pred <- predict(wine_forest, wine_test, type='class')
+confusionMatrix(forest_pred, wine_test$qual)
+```
+
+  Fortunately the random forest did provide a much more accurate model with an accuracy score of .7218. Unfortunately this is still not a very performant algorithm, and would not be suggested to use on predicting the wine scores, as it struggled with both the wine ranked 4 and 7 quite a bit. The variable importance plots align quite well with the pruned tree, showing in the RF model alcohol was significantly more impactful in predicting the quality than any other feature, and the logarithmic shape of the accuracy plot shows the bottom half of the features are not very helpful.
+  
+## Conclusion
+  Overall, the analysis above shows the potential use of trees, pruning, and random forests; along with the limitations of using any of the models with data. Having a deeper dataset with more data from the outer classes potentially could've greatly increased all three models accuracy, and especially the random forest models accuracy. It can be seen that using a random forest opposed to a singular tree can easily increase the accuracy of the model by 10-20% if not more, and in most cases would prove to be used over a singular decision tree. This concludes the Random Forest analysis in R.
+
+\newpage 
+
+\begingroup
+\setlength{\parindent}{-0.5in}
+\setlength{\leftskip}{0.5in}
+# References
+
+Lantz, B. (2015). Machine Learning with R : Expert Techniques for Predictive Modeling to Solve All Your Data Analysis Problems: Vol. Second edition. Packt Publishing.
+
+Yu-Wei, C. (2015). Machine Learning with R Cookbook. Packt Publishing.
+
+<div id="refs" custom-style="Bibliography"></div>
+\endgroup

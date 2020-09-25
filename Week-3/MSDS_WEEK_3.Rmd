@@ -1,0 +1,199 @@
+---
+title             : "MSDS680 - Week 3 - Naive Bayes Classification"
+shorttitle        : "Naive Bayes Classification"
+
+author: 
+  - name          : "Benjamin Siebold"
+    affiliation   : ""
+    corresponding : yes    # Define only one corresponding author
+
+affiliation:
+  - id            : ""
+    institution   : "Wilhelm-Wundt-University"
+
+keywords          : "keywords"
+wordcount         : "X"
+
+bibliography      : ["r-references.bib"]
+
+floatsintext      : no
+figurelist        : no
+tablelist         : no
+footnotelist      : no
+linenumbers       : no
+mask              : no
+draft             : no
+
+documentclass     : "apa6"
+classoption       : "man"
+output            : papaja::apa6_pdf
+---
+
+```{r setup, include = TRUE}
+library("papaja")
+r_refs("r-references.bib")
+```
+
+# Introduction
+  In this project, the Naive Bayes (NB) classification model will be used to classify a set of texts between spam and ham based off words within the text messages. The data used for this analysis can be found by downloading the zip file [here](http://archive.ics.uci.edu/ml/machine-learning-databases/00228/). The dataset used in this analysis is simple to start, with only two attributes, a type and text attribute.
+  
+# Methodology and Results
+  The first step in the analysis is to read the data in, and set up the environment for analysis. In order to complete this analysis, libraries for the model itself, as well as cleaning and visualizing the data will be loaded. The model did create issues in R when applying to the entire dataset, thus for sake of performing the model, a sample of 4000 records was taken.
+  
+```{r environment setup, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(e1071)
+library(caret)
+library(tm)
+library(SnowballC)
+library(wordcloud)
+library(gmodels)
+library(magick)
+setwd('/cloud/project/week_3')
+set.seed(486)
+
+texts <- read.delim('SMSSpamCollection', quote="", header= FALSE, stringsAsFactors=FALSE, col.names=c('type','text'))
+texts <- texts[sample(nrow(texts), 4000), ]
+texts$type <- factor(texts$type)
+```
+  
+  Prior to applying any classification to the texts, it is first necessary to clean the text data so as to unify the data. This will ensure the amount of features is reduced because various tenses of the same word are counted as different features. The steps necessary to clean the data are to ensure all words are lower case, remove all punctuation and numbers, remove stopwords that don't have any inherent meaning such as "the", "and" etc. and then stem the words in each column to change like words to the same word. These steps will enable the texts to be similar data with words such as "learning" and "learned" being recognized the same as their root word, "learn."
+
+```{r data cleaning setup, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+text_corpus <- VCorpus(VectorSource(texts$text))
+as.character(text_corpus[[1]])
+
+text_corpus_clean <- tm_map(text_corpus, content_transformer(tolower))
+text_corpus_clean <- tm_map(text_corpus_clean, removeNumbers)
+text_corpus_clean <- tm_map(text_corpus_clean, removeWords, stopwords())
+text_corpus_clean <- tm_map(text_corpus_clean, removePunctuation)
+
+
+replacePunctuation <- function(x) {
+  gsub("[[:punct:]]+", " ", x)
+}
+
+text_corpus_clean <- tm_map(text_corpus_clean, stemDocument)
+text_corpus_clean <- tm_map(text_corpus_clean, stripWhitespace)
+```
+
+  With the text data now cleaned, some general data inspection will be done such as creating word clouds of the whole dataset, the spam and ham portions of the dataset. This inspection will allow for potential differences between the spam and ham texts to be made, as well as an understanding of if there are words that dominate the dataset.
+  
+```{r wordcloud,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+wordcloud(text_corpus_clean, min.freq = 50, random.order = FALSE)
+```
+
+```{r spam/ham, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+spam <- subset(texts, type == 'spam')
+ham <- subset(texts, type == 'ham')
+```
+
+## Spam
+
+```{r wordclouds for spam, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+wordcloud(spam$text, max.words = 40, scale = c(5,.5))
+```
+
+## Ham
+
+```{r wordclouds for ham, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+wordcloud(ham$text, max.words = 40, scale = c(3,.5))
+```
+
+  From the three word clouds above, it can be seen certain words appear very frequently in the spam texts that don't appear frequently in the ham texts, but there is also a bit of overlap. For example call. free, claim, and stop are all very visible in the spam wordcloud, but not very visible in the ham; however, now and you are both used frequently in both. With this knowledge, distinguishing between the two should be a task achievable with an NB classifier. In order to apply a NB model, a few more steps are necessary. The data will now be turned into a document matrix which will allow the words to each be viewed as a feature, and create train and test data for the model to evaluate.
+
+  
+```{r matrix and training, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+text_matrix <- DocumentTermMatrix(text_corpus_clean)
+
+split <- nrow(text_matrix)*.70
+max_rows <- nrow(text_matrix)
+
+text_matrix_train <- text_matrix[1:split, ]
+text_matrix_test <- text_matrix[(split+1):max_rows, ]
+text_train_labels <- texts[1:split, ]$type
+text_test_labels <- texts[(split+1):max_rows, ]$type
+dim(text_matrix)
+
+attributes(text_matrix)
+
+```
+  
+  Now that the data has been split into training and test data, it can be seen above there are a few potential issues with the training and testing data. The first is the amount of features in the data. over 6,000 features will make for a difficult classification. These features can be reduced by omitting words that appear in less than x amount of documents. The other issue is in the weighting of the data. Currently the terms are looked at as "term frequency" rather than a boolean indicator on whether or not the terms exist. The NB model is mostly used with categorical features opposed to what is occurring in the frequency matrix. To ensure the data is best prepared for the NB model to be applied, the last steps of cleaning (removing words that appear infrequently, and converting the data to categorical) are necessary.
+
+```{r data conversion, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+text_freq_words <- findFreqTerms(text_matrix_train, 5)
+text_matrix_freq_train <- text_matrix_train[, text_freq_words]
+text_matrix_freq_test <- text_matrix_test[, text_freq_words]
+
+convert_counts <- function(x) {
+  x <- ifelse(x > 0, "Yes", "No")
+}
+
+text_train <- apply(text_matrix_freq_train, MARGIN=2, convert_counts)
+text_test <- apply(text_matrix_freq_test, MARGIN=2, convert_counts)
+
+prop.table(table(text_train_labels))
+prop.table(table(text_test_labels))
+```  
+
+The above steps have removed all features that don't appear in at least 5 of the 5,000 documents to increase the efficiency of the NB model, converted variables to categorical data giving a label of "Yes" if a word exists in the text and "No" if it doesn't, and lastly shown the ratio of spam and ham in both the train and test datasets to ensure the ratios are similar for the models accuracy. Now with clean training and test data, a NB model will be applied.
+
+```{r NB classifier, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+prop.table(table(text_train_labels))
+prop.table(table(text_test_labels))
+
+text_freq_words <- findFreqTerms(text_matrix_train, 5)
+text_matrix_freq_train <- text_matrix_train[, text_freq_words]
+text_matrix_freq_test <- text_matrix_test[, text_freq_words]
+
+convert_counts <- function(x) {
+  x <- ifelse(x > 0, "Yes", "No")
+}
+
+text_train <- apply(text_matrix_freq_train, MARGIN=2, convert_counts)
+text_test <- apply(text_matrix_freq_test, MARGIN=2, convert_counts)
+
+text_classifier <- naiveBayes(text_train, text_train_labels)
+text_pred <- predict(text_classifier, text_test)
+```
+
+\newpage
+```{r results, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+c <- confusionMatrix(text_pred, text_test_labels)
+c
+f1score <- as.numeric(c$byClass['F1'])
+f1score
+```
+
+  Above it can be seen that there were a total of 23 texts incorrectly labeled. 4 of the 1052 ham messages were labeled incorrectly, and 19 of the 148 spam texts were incorrectly labeled as ham. The accuracy of the model was really high with an f1 score of .989. The models accuracy is high enough that the study could be finished, but for sake of being thorough the model will be repeated with a Laplace estimator. The Laplace estimator allows for features that only appeared in one of the labels (spam or ham) to not be definite in determining of whether or not a text is labeled.
+  
+```{r c2, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+text_classifier2 <- naiveBayes(text_train, text_train_labels, laplace = 1)
+text_pred2 <- predict(text_classifier2, text_test)
+```
+
+\newpage
+
+```{r c2 results, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+c2 <- confusionMatrix(text_pred2, text_test_labels)
+c2
+f1score2 <- as.numeric(c2$byClass['F1'])
+f1score2
+```
+
+  From above, it can be seen the laplace estimator impacted the model by creating an inverse of inaccuracy. With the estimator more ham messages were labeled incorrectly but less spam messages were. The overall f1 score of the model with the laplace estimator was .988, almost identical to the original model.
+  
+# Conclusion
+  Due to the nature of messaging, the model built without the laplace estimator will be better to use because it is one more accurate, and two preferable for spam messages to slip through a filter than for messages that are intended to be received filtered out. Overall, Naive Bayes proved to be very reliable for filtering spam text messages with the given dataset. Further steps would be to look at the features in more depth and decide if further, or less feature reduction is necessary to either increase the models accuracy or speed at which it performs. This concludes the Naive Bayes classification problem. 
+  
+\newpage 
+
+\begingroup
+\setlength{\parindent}{-0.5in}
+\setlength{\leftskip}{0.5in}
+# References
+
+Lantz, B. (2015). Machine Learning with R : Expert Techniques for Predictive Modeling to Solve All Your Data Analysis Problems: Vol. Second edition. Packt Publishing.
+
+<div id="refs" custom-style="Bibliography"></div>
+\endgroup
