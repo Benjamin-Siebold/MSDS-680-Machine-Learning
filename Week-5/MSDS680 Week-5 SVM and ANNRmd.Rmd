@@ -1,0 +1,204 @@
+---
+title             : "MSDS680 - Week 5 - ANN and SVM"
+shorttitle        : "ANN and SVM"
+
+author: 
+  - name          : "Benjamin Siebold"
+    affiliation   : ""
+    corresponding : yes    # Define only one corresponding author
+
+affiliation:
+  - id            : ""
+    institution   : "Regis University"
+
+keywords          : "keywords"
+wordcount         : "X"
+
+bibliography      : ["r-references.bib"]
+
+floatsintext      : no
+figurelist        : no
+tablelist         : no
+footnotelist      : no
+linenumbers       : no
+mask              : no
+draft             : no
+
+documentclass     : "apa6"
+classoption       : "man"
+output            : papaja::apa6_pdf
+---
+
+```{r setup, include = TRUE}
+library("papaja")
+r_refs("r-references.bib")
+```
+
+# Introduction
+  In this project, both Support Vector Machines and Neural Networks will be explored using the Mushroom dataset from UCI to predict whether or not a mushroom is edible or poisonous. The mushroom dataset contains 8124 rows and 23 variables. This includes 22 features and one label (edible, poisionous). The muhsroom dataset does not include full descriptions of each feature, rather an abbreviation or indicator for every variable. These features are attributes of the mushroom, such as color, texture, smell, along with where it grows.  To access the dataset and find the values for each column please refer to http://archive.ics.uci.edu/ml/machine-learning-databases/mushroom/.
+  
+# Methodology
+## Set up
+  As is the first step in any analysis, the data needs to be loaded in, the necessary libraries and packages for exploration, cleaning, and model application need to be installed and loaded int the instance, the seed is set for repeateable results, and because there are not column names in the reading of the data in this instance column names will be applied to the dataset.
+
+```{r environment setup, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+library(data.table) #used to read in data
+library(DataExplorer)#used to inspect the data and get initial understanding
+library(e1071) #used for SVM model
+library(caret) #used for model analysis
+library(class) #used for converting data types
+library(dbplyr) #used for removing/adding columns
+library(neuralnet) #used for neural net model
+
+set.seed(476)
+
+mushroom_data <- read.table(
+  'http://archive.ics.uci.edu/ml/machine-learning-databases/mushroom/agaricus-lepiota.data', 
+  stringsAsFactors = T, header = F, sep = ',')
+
+col_names <- c('class', 'cap.shape', 'cap.surface', 'cap.clr', 'bruises', 'odor',
+               'gill.attach', 'gill.spacing', 'gill.sz', 'gill.clr',
+               'stalk.shape', 'stalk.root', 'stalk.sar', 'stalk.sbr',
+               'stalk.clr.abv.rng', 'stalk.clr.bel.rng', 'veil.type', 'veil.clr',
+               'ring.num', 'ring.type', 'spore.prnt.clr', 'pop', 'habitat')
+
+names(mushroom_data) <- col_names
+```
+
+## Data Exploration
+  With the data loaded, exploration of what exists in the data can begin.
+
+```{r data exploration, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+# initial data inspectio
+summary(mushroom_data) # provides initial idea of what data looks like
+plot_intro(mushroom_data)
+plot_missing(mushroom_data)
+plot_correlation(mushroom_data)
+str(mushroom_data)
+```
+
+  Above a few visuals show inspecting the data is quite difficult in its current state. To allow for easier inspection of the data, it has been converted to factors. A few aspects of the data are interesting. For example vei.type only has one value and thus can be removed. Additionally stalk.root has almost one third of the data being "?". To fall in line with the rest of the column, the question marks will be converted to "u" for unknown.
+
+```{r data exploration part 2, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+shroom_dat <- subset(mushroom_data, select = -c(`veil.type`))
+levels(shroom_dat$`stalk.root`)[levels(shroom_dat$`stalk.root`)=="?"] <- "u" #converts missing data to "unknown"
+
+shroom_dat$class <- as.factor(shroom_dat$class)
+str(shroom_dat)
+```
+
+## SVM Model 
+  The data is ready to be split and models are ready to be applied. The first model that will be used is the Support Vector Machine, which creates planes based off features to classify the data to either "edible" or "poisonous". For curiosity sake, all four types of the SVM models will be applied to compare how they impact results. SVM models traditionally require numeric data in order for them to function; however, the library e1071 interprets the data as numeric based off classifying each label or category as a number.
+
+```{r SVM, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+idx <- createDataPartition(shroom_dat$class, p=0.7, list=FALSE) #creates index to split data
+
+shroom_train <- shroom_dat[idx,]
+shroom_test <- shroom_dat[-idx,] 
+
+svm_linear <- svm(class~., data=shroom_train, type='C-classification', kernel='linear') # applies svm with a linear fit
+shroom_lin_pred <- predict(svm_linear, shroom_test)
+svm_radial <- svm(class~., data=shroom_train, type='C-classification', kernel='radial') # applies svm with a radial fit
+shroom_rad_pred <- predict(svm_radial, shroom_test)
+svm_poly <- svm(class~., data=shroom_train, type='C-classification', kernel='polynomial') # applies svm with a polynomial fit
+shroom_poly_pred <- predict(svm_poly, shroom_test)
+svm_sigmoid <- svm(class~., data=shroom_train, type='C-classification', kernel='sigmoid') # applies svm with a sigmoid fit
+shroom_sig_pred <- predict(svm_sigmoid, shroom_test)
+
+confusionMatrix(shroom_lin_pred, shroom_test$class)$table 
+confusionMatrix(shroom_rad_pred, shroom_test$class)$table
+confusionMatrix(shroom_poly_pred, shroom_test$class)$table
+confusionMatrix(shroom_sig_pred, shroom_test$class)$table
+```
+
+  From applying the SVM models above, it can be seen the linear model and the radial model both perform similarly, while the polynomial and sigmoid models struggle. Due to the complexity of the data, even though the radial model is slightly less accurate it is recommended to apply this model to future, unknown data.
+  
+## Neural Network
+  Another model that could work well for the analysis of the mushroom dataset are neural networks. These models operate by mimicking neural networks in the brain of humans, but at a much less complicated level. One caveat of neural networks is there is an absolute requirement that the data is numerical. Because of this, two different approaches will be used: One that replaces the data with dummy variables, and Two one that converts the categorical data to numeric.
+
+### Dummy Variable test
+  The first neural network to be built converts the data into many columns of booleans if a label is met. For example if there is a column with three categories, it will be split into three columns. Once this is done, the data is split into training and test data. Additionally, the training columns need to be assigned for the network formula to be built.
+
+```{r dummy vars setup, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+shroom_features <- subset(shroom_dat, select = -class) #removing class to dummy variable for ANN
+shroom_Dummy <- dummyVars(~., data=shroom_features) #applies levels to variables for splitting factors
+shroom_Dummy <- data.frame(predict(shroom_Dummy, shroom_features)) #transforms data into boolean columns for each level of factors
+shroom_Dummy$class <- shroom_dat$class
+ncol(shroom_Dummy)
+
+idx <- createDataPartition(shroom_Dummy$class, p=0.7, list=FALSE) #creates index to split data
+ann_shroom_train <- shroom_Dummy[idx,]
+ann_shroom_test <- shroom_Dummy[-idx,]
+training_cols <- names(subset(shroom_Dummy, select = -c(class))) 
+```
+
+  With the training columns set, the formula for how the neural net can be built. This is necessary because neural nets don't allow for the (type ~ .) syntax to be used, so rather than type out each feature the formula can be pasted in. Once the formula is built, a network can be built, and a plot of the network is provided.
+
+```{r dummy vars network, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+nn.formula <- as.formula(paste("class ~ ", paste(training_cols, collapse = " + "))) #combines all of the columns with +s to add into the ANN model
+network <- neuralnet(nn.formula, shroom_Dummy) #creates neural network on dummy variable dataset
+plot(network)
+``` 
+
+  Above the general shape of the network can be seen as having 116 input nodes, one hidden node, and two output nodes. Lastly we apply the network to the test data to see how accurate it is. To do this, the network is computed, and the the net results are compared to the test data.
+
+```{r dummy vars predict, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+net_predict <- compute(network, subset(ann_shroom_test, select = -c(`class`)))$net.result
+net_predict <- as.factor(c('e','p')[apply(net_predict, 1, which.max)]) #converts results from numeric to e and p to match factor of dataset
+
+confusionMatrix(net_predict, ann_shroom_test$class)
+```
+
+  Now the initial NN model with dummy variables is completed, and it can be seen the model predicted with 100% accuracy. The amount of features in this model makes for difficult interpretations of the visuals; thus next a second NN will be built converting the category data to numeric.
+
+### Numeric Variable Test
+  Similarly to the dummy variable NN model, there is some initial setup necessary for the model to work. The feature columns all need to be converted to numeric from factor, and then the data can be split into training and test columns. Lastly the column names need to be assigned for the formula to be built.
+  
+```{r numeric setup, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+shroom_numeric <- shroom_dat #replicates data for lewss features
+shroom_numeric[, 2:22] <- sapply(shroom_numeric[,2:22],as.numeric) # converts all columns to numeric
+
+num_idx <- createDataPartition(shroom_Dummy$class, p=0.7, list=FALSE) #creates index to split data
+num_train <- shroom_numeric[num_idx,]
+num_test <- shroom_numeric[-num_idx,]
+num_train_names <- names(subset(shroom_numeric, select = -c(class)))
+```
+
+  Now that the data is ready to be used, the formula and model can be built. In the MSDS680 Week-5 SVM and ANN.R file many iterations of the model can be found; however, only the most accurate/efficient one will be included in this write up. Through the iterations, it was discovered that building a layer with 3 nodes produced accurate model without sacrificing too much speed. Below the formula and network are built, and a plot is provided to show what the network looks like.
+
+```{r numeric model build, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+numeric_formula <- as.formula(paste("class ~ ", paste(num_train_names, collapse = " + ")))
+num_network <- neuralnet(numeric_formula, shroom_numeric, hidden= c(3)) #performs neural network using original features as numeric columns
+plot(num_network)
+```
+
+  The above network shows the advantage of building a model with less features from the perspective of visualizing. You can see the node interaction and the assigned values for separating. With this network, the test data will be predicted to compare the numeric to the dummy features.
+  
+```{r numeric model predict, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+num_predict <- compute(num_network, subset(num_test, select = -c(class)))$net.result 
+num_predict <- as.factor(c('e','p')[apply(num_predict, 1, which.max)])
+
+confusionMatrix(num_predict, num_test$class)
+```
+  
+  The numeric and dummy variable have their pros and cons. For visualizing data, the numeric network with multiple layers is much easier to interpret. From am accuracy perspective they are identical. From a efficiency perspective the dummy variable model ended up being significantly faster. Because of this, it is recommended a dummy variable NN would be more practical to use.
+
+# Conclusion
+  This analysis shows the strengths and weaknesses of both SVM, along with how incredibly accurate they both have the potential to be. The next steps to decrease possibility of overfitting could be to reduce the features based off of correlation in order to see if there are some features unnecessary, or reduce the amount of training data provided to the model to provide a better split of unknown data. This concludes the analysis of SVM and ANN models in R.
+  
+\newpage
+
+# References
+
+Günther, F., and Fritsch, S. (2010). neuralnet: Training of neural networks. The R journal, 2(1), 30-38.
+
+Yu-Wei, C. (2015). Machine Learning with R Cookbook. Packt Publishing.
+
+Lantz, B. (2015). Machine Learning with R: Expert Techniques for Predictive Modeling to Solve All Your Data Analysis Problems: Vol. Second edition. Packt Publishing.
+
+\begingroup
+\setlength{\parindent}{-0.5in}
+\setlength{\leftskip}{0.5in}
+
+<div id="refs" custom-style="Bibliography"></div>
+\endgroup

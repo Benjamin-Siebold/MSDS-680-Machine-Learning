@@ -1,0 +1,127 @@
+---
+title             : "MSDS680 - Week 5 - ANN and SVM"
+shorttitle        : "ANN and SVM"
+
+author: 
+  - name          : "Benjamin Siebold"
+    affiliation   : ""
+    corresponding : yes    # Define only one corresponding author
+
+affiliation:
+  - id            : ""
+    institution   : "Regis University"
+
+keywords          : "keywords"
+wordcount         : "X"
+
+bibliography      : ["r-references.bib"]
+
+floatsintext      : no
+figurelist        : no
+tablelist         : no
+footnotelist      : no
+linenumbers       : no
+mask              : no
+draft             : no
+
+documentclass     : "apa6"
+classoption       : "man"
+output            : papaja::apa6_pdf
+---
+
+```{r setup, include = TRUE}
+library("papaja")
+r_refs("r-references.bib")
+```
+
+# Introduction
+  In this project, both Support Vector Machines and Neural Networks will be explored using the Mushroom dataset from UCI to predict whether or not a mushroom is edible or poisonous. The mushroom dataset contains 8124 rows and 23 variables. This includes 22 features and one label (edible, poisionous). The muhsroom dataset does not include full descriptions of each feature, rather an abbreviation or indicator for every variable. These features are attributes of the mushroom, such as color, texture, smell, along with where it grows.  To access the dataset and find the values for each column please refer to http://archive.ics.uci.edu/ml/machine-learning-databases/mushroom/.
+  
+# Methodology
+## Set up
+  As is the first step in any analysis, the data needs to be loaded in, the necessary libraries and packages for exploration, cleaning, and model application need to be installed and loaded int the instance, the seed is set for repeateable results, and because there are not column names in the reading of the data in this instance column names will be applied to the dataset.
+
+```{r environment setup, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+library(data.table) #used to read in data
+library(DataExplorer)#used to inspect the data and get initial understanding
+library(e1071) #used for SVM model
+library(caret) #used for model analysis
+library(class) #used for converting data types
+library(dbplyr) #used for removing/adding columns
+library(neuralnet) #used for neural net model
+
+set.seed(476)
+
+mushroom_data <- read.table('http://archive.ics.uci.edu/ml/machine-learning-databases/mushroom/agaricus-lepiota.data', header = F, sep = ',')
+
+col_names <- c('class', 'cap.shape', 'cap.surface', 'cap.clr', 'bruises', 'odor',
+               'gill.attach', 'gill.spacing', 'gill.sz', 'gill.clr',
+               'stalk.shape', 'stalk.root', 'stalk.sar', 'stalk.sbr',
+               'stalk.clr.abv.rng', 'stalk.clr.bel.rng', 'veil.type', 'veil.clr',
+               'ring.num', 'ring.type', 'spore.prnt.clr', 'pop', 'habitat')
+
+names(mushroom_data) <- col_names
+```
+
+## Data Exploration
+  With the data loaded, exploration of what exists in the data can begin.
+
+```{r data exploration, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+# initial data inspectio
+summary(mushroom_data) # provides initial idea of what data looks like
+plot_intro(mushroom_data)
+plot_missing(mushroom_data)
+plot_correlation(mushroom_data)
+str(mushroom_data)
+```
+
+  Above a few visuals show inspecting the data is quite difficult in its current state. All of the columns are read in as characters, which makes building visuals and getting a summary of the data quite difficult. The last command of str(mushroom_data) does provide a small amount of information. The column class is the target variable to determine whether or not a mushroom is poisonous or not, and the veil.type column has only one level, or is a constant thus will not provide insight for the model and can be removed. The head function does show the stalk.root column having "?" in the data, which is a sign of missing data. To alleviate this problem the ? will be converted to "u" to give a label of unknown to the data.
+
+```{r data exploration part 2, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+shroom_dat <- subset(mushroom_data, select = -c(`veil.type`))
+levels(shroom_dat$`stalk.root`)[levels(shroom_dat$`stalk.root`)=="?"] <- "u" #converts missing data to "unknown"
+
+shroom_dat$class <- as.factor(shroom_dat$class)
+str(shroom_dat)
+```
+
+## SVM Model 
+  The data is ready to be split and models are ready to be applied. The first model that will be used is the Support Vector Machine, which creates planes based off features to classify the data to either "edible" or "poisonous". For curiosity sake, all four types of the SVM models will be applied to compare how they impact results. SVM models traditionally require numeric data in order for them to function; however, thanks to some help from the e1071 library the data is interpreted as numeric 
+
+```{r SVM, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+idx <- createDataPartition(shroom_dat$class, p=0.7, list=FALSE) #creates index to split data
+
+shroom_train <- shroom_dat[idx,]
+shroom_test <- shroom_dat[-idx,] 
+
+svm_linear <- svm(class~., data=shroom_train, type='C-classification', kernel='linear') # applies svm with a linear fit
+shroom_lin_pred <- predict(svm_linear, shroom_test)
+svm_radial <- svm(class~., data=shroom_train, type='C-classification', kernel='radial') # applies svm with a radial fit
+shroom_rad_pred <- predict(svm_radial, shroom_test)
+svm_poly <- svm(class~., data=shroom_train, type='C-classification', kernel='polynomial') # applies svm with a polynomial fit
+shroom_poly_pred <- predict(svm_poly, shroom_test)
+svm_sigmoid <- svm(class~., data=shroom_train, type='C-classification', kernel='sigmoid') # applies svm with a sigmoid fit
+shroom_sig_pred <- predict(svm_sigmoid, shroom_test)
+
+confusionMatrix(shroom_lin_pred, shroom_test$class)$table 
+confusionMatrix(shroom_rad_pred, shroom_test$class)$table
+confusionMatrix(shroom_poly_pred, shroom_test$class)$table
+confusionMatrix(shroom_sig_pred, shroom_test$class)$table
+```
+
+\newpage
+
+# References
+
+Günther, F., and Fritsch, S. (2010). neuralnet: Training of neural networks. The R journal, 2(1), 30-38.
+
+Yu-Wei, C. (2015). Machine Learning with R Cookbook. Packt Publishing.
+
+Lantz, B. (2015). Machine Learning with R: Expert Techniques for Predictive Modeling to Solve All Your Data Analysis Problems: Vol. Second edition. Packt Publishing.
+
+\begingroup
+\setlength{\parindent}{-0.5in}
+\setlength{\leftskip}{0.5in}
+
+<div id="refs" custom-style="Bibliography"></div>
+\endgroup
