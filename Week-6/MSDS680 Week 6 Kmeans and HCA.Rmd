@@ -1,0 +1,208 @@
+---
+title             : "MSDS680 - Week 4 - Decision Trees"
+shorttitle        : "Decision Trees and "
+
+author: 
+  - name          : "Benjamin Siebold"
+    affiliation   : ""
+    corresponding : yes    # Define only one corresponding author
+
+affiliation:
+  - id            : ""
+    institution   : "Regis University"
+
+keywords          : "keywords"
+wordcount         : "X"
+
+bibliography      : ["r-references.bib"]
+
+floatsintext      : no
+figurelist        : no
+tablelist         : no
+footnotelist      : no
+linenumbers       : no
+mask              : no
+draft             : no
+
+documentclass     : "apa6"
+classoption       : "man"
+output            : papaja::apa6_pdf
+---
+
+```{r setup, include = FALSE}
+library("papaja")
+r_refs("r-references.bib")
+```
+
+```{r wrap-hook}
+library(knitr)
+hook_output = knit_hooks$get('output')
+knit_hooks$set(output = function(x, options) {
+  # this hook is used only when the linewidth option is not NULL
+  if (!is.null(n <- options$linewidth)) {
+    x = knitr:::split_lines(x)
+    # any lines wider than n should be wrapped
+    if (any(nchar(x) > n)) x = strwrap(x, width = n)
+    x = paste(x, collapse = '\n')
+  }
+  hook_output(x, options)
+})
+```
+
+# Introduction
+
+# Methodology
+## Set Up
+
+```{r environment setup, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+
+library(DataExplorer) #data exploration
+library(factoextra) #building wss and silhouette plots
+library(tidyverse) #data cleaning
+library(cluster) #applies HCA
+library(dendextend) #compares dendrograms
+library(caret) #dummy variables
+
+set.seed(422)
+customers <- read.csv('../week_6/Wholesale customers data.csv')
+```
+
+## Data Clean
+  
+```{r data clean, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+summary(customers)
+str(customers)
+plot_histogram(customers)
+
+customers_factor <- as.data.frame(lapply(customers[,c(1,2)], as.factor))
+customers_scaled <- as.data.frame(lapply(customers[,c(3:8)], scale))
+dummy_vars <- dummyVars('~.', data=customers_factor,fullRank=T)
+dummy_customers <- as.data.frame(predict(dummy_vars, newdata=customers_factor))
+
+clean_customers <- cbind(dummy_customers,customers[,c(3:8)]) #creates dummy dataset without scales
+scaled_clean_cust <- cbind(dummy_customers, customers_scaled) #creates scaled dataset with dummy variables
+```
+
+## Kmeans Cluster Decision
+
+```{r kmeans investigation, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+fviz_nbclust(clean_customers, kmeans, method = 'wss')
+fviz_nbclust(scaled_clean_cust, kmeans, method = 'wss')
+
+fviz_nbclust(clean_customers, kmeans, method = 'silhouette')
+fviz_nbclust(scaled_clean_cust, kmeans, method = 'silhouette')
+
+fviz_nbclust(clean_customers, kmeans, method = 'wss') +
+  geom_vline(xintercept = 5, linetype = 1)
+```
+
+## Kmeans Model
+
+```{r kmeans, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+kmeans_fit <- kmeans(clean_customers, 5)
+
+kmeans_fit$size
+kmeans_fit$centers
+(kmeans_fit$betweenss/kmeans_fit$totss) #provides fit score
+```
+
+## Feature Compare
+
+```{r kmeans plots, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+plot(clean_customers, col=kmeans_fit$cluster) #gives all the plots to provide a good candidate for inspection
+
+plot(clean_customers[c('Fresh','Detergents_Paper')], col=kmeans_fit$cluster) 
+points(kmeans_fit$centers[,c('Fresh', 'Detergents_Paper')], col=1:5, pch=8, cex=2) #adds center of cluster to plot
+```
+
+## Kmeans analysis
+
+```{r kmeans cluster analysis, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+clean_customers$kmeans_cluster <- kmeans_fit$cluster
+
+head(clean_customers)
+# summary statistics grouped by cluster
+aggregate(clean_customers, list(clean_customers$kmeans_cluster), min) 
+aggregate(clean_customers, list(clean_customers$kmeans_cluster), max)
+aggregate(clean_customers, list(clean_customers$kmeans_cluster), mean)
+```
+
+## HCA Cluster Decision
+
+```{r hca vis & dist, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+fviz_nbclust(clean_customers, hcut, method  = 'wss') #hca plot with wss
+fviz_nbclust(clean_customers, hcut, method  = 'silhouette') #hca plot with silhouette
+
+agg_d <- dist(clean_customers, method = 'euclidean') #agglomerative distance between points using euclidean 
+```
+
+## Agglomerative
+
+### Complete
+
+```{r complete, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+hc_complete_agg <- hclust(agg_d, method = 'complete') #applies HCA using complete method
+plot(hc_complete_agg, cex =.6, hang = -1)
+hc_complete_agg_fit <- cutree(hc_complete_agg, k=3) #splits the HCA into three clusters
+
+table(hc_complete_agg_fit) #number of data points in each cluster
+
+
+plot(hc_complete_agg)
+rect.hclust(hc_complete_agg, k=3) #addes cluster split
+```
+
+### Ward-1
+
+```{r ward2, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+hc_wd2 <- hclust(agg_d, method = 'ward.D2')
+plot(hc_wd2, cex =.6, hang = -1)
+hc_wd2_fit <- cutree(hc_wd2, k = 3)
+
+table(hc_wd2_fit)
+
+plot(hc_wd2)
+rect.hclust(hc_wd2, k = 3, border = 2:5)
+```
+
+### Ward-2
+
+```{r ward2 new height, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALSE}
+hc_wd2_new_fit <- cutree(hc_wd2, h = 175000) #splits hca based off height instead of clusters
+
+table(hc_wd2_new_fit)
+
+plot(hc_wd2)
+rect.hclust(hc_wd2, h = 175000, border = 2:5)
+
+fviz_cluster(list(data = clean_customers[,c(1:9)], cluster = hc_wd2_new_fit)) #provides cluster plot of clusters
+```
+
+## Divisive
+
+```{r divisive, echo=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60), warning=FALS}
+div_d <- diana(clean_customers, metric = 'euclidean') #divisive hca
+
+summary(div_d)
+plot(div_d, which.plots = 2)
+
+div_cut <- cutree(div_d, k=3)
+table(div_cut)
+div_d$dc
+
+fviz_cluster(list(data = clean_customers[,c(1:9)], cluster = div_cut))
+```
+
+## HCA Analysis
+
+# Conclusion
+
+\newpage
+# References
+
+\begingroup
+\setlength{\parindent}{-0.5in}
+\setlength{\leftskip}{0.5in}
+
+<div id="refs" custom-style="Bibliography"></div>
+\endgroup
