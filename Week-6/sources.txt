@@ -1,0 +1,3 @@
+Yu-Wei, C. (2015). Machine Learning with R Cookbook. Packt Publishing.
+
+http://uc-r.github.io/hc_clustering
